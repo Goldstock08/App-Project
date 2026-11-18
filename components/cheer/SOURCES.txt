@@ -1,0 +1,3 @@
+explosion.gif
+  A short fireball used when a close loses money. CC0. OpenGameArt, "Explosion GIF", by scl.
+  https://opengameart.org/content/explosion-gif
