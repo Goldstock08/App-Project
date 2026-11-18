@@ -1,4 +1,4 @@
-# [App name]
+# 0DTE Week
 
 MSF 8615 Derivatives, Villanova University · Team: [names]
 
@@ -10,18 +10,18 @@ MSF 8615 Derivatives, Villanova University · Team: [names]
 > Then replace every [bracketed] placeholder below and delete this note.
 
 ## The question
-[One or two sentences: what decision, calculation, or risk does the app help a user understand?]
+If you buy a fairly priced at-the-money 0DTE call or put each morning and bet the cash again through Friday, what happens to the bankroll, and how do the Greeks change as the clock runs out?
 
 ## Inputs and outputs
-- **Inputs:** [what the user enters or uploads]
-- **Outputs:** [numbers, charts, and what they mean]
+- **Inputs:** call or put, a stake of 25%, 50%, or 100% of the hypothetical bankroll, and a click that advances the session 30 minutes. A new week also takes Monday's open, annual volatility, the risk-free rate, and a random seed.
+- **Outputs:** the Black-Scholes mark, breakeven spot, profit versus premium, and the four Greeks at the current spot and time. One chart shows the spot against the strike and breakeven. One shows delta across spot. One shows delta, gamma, vega, and theta together, each divided by its value at 09:30. Friday's bankroll is the score.
 
 ## Data
-[Where each file in `data/` comes from, when it was saved, and what is observed versus assumed.]
+No market file. Every price is a model value from the assumptions in the sidebar, and every underlying move is a draw from that same volatility. The bankroll is hypothetical. Label on screen: European, no dividend, constant volatility, no bid-ask, no overnight gap.
 
 | File in `data/` | Source | Date and time saved | Terms of use: can it be public? |
 |---|---|---|---|
-| | | | |
+| none | Model inputs only. Nothing was downloaded. | | |
 
 - Save market data as dated files, for example `cboe_spx-options_2026-10-20.csv`, and show the date
   on screen.
@@ -30,11 +30,20 @@ MSF 8615 Derivatives, Villanova University · Team: [names]
 - Hypothetical inputs and stress scenarios are fine. Label them as such.
 
 ## Method
-[Formulas and model assumptions, in plain English. Cite the textbook section.]
+Each morning's option is struck at that morning's spot and priced with the Black-Scholes-Merton formula for a European call or put on a non-dividend underlying (Hull, Chapter 15; the worked example is the price check in `tests/test_pricing.py`). Delta, gamma, vega, and theta are the partial derivatives of that price. Theta is the derivative as calendar time moves forward, so it equals minus the derivative with respect to time left.
+
+One session is 1/252 of a year, split into 13 half-hours. A click draws a standard normal Z and sets
+
+log(S_new / S) = (r − ½ σ²) Δt + σ √Δt · Z
+
+with Δt = 1/(252 × 13) and the same σ that set the premium. At 16:00 the option pays its intrinsic value. Cash left is the unspent bankroll plus the number of units times that payoff. The next morning opens at today's close. There is no overnight move.
+
+Because the option is bought at the volatility used to draw the path, the bet is fair before luck. Breakeven still sits beyond the strike by the premium, so a long option often expires worthless. Letting the winnings ride is how a week ends at zero or at a large multiple of the 10,000 starting cash.
 
 ## Tests
 Run `pytest`. Each test compares the code with a number checked independently:
-- `tests/test_pricing.py`: Black-Scholes prices match Hull's Chapter 15 example; put-call parity holds.
+- `tests/test_pricing.py`: Black-Scholes prices match Hull's Chapter 15 example; put-call parity holds. Greeks match a finite-difference bump of the same formula. The Black-Scholes PDE residual is about zero. At zero time left the price is the intrinsic payoff. One session is 1/252 of a year.
+- `tests/test_game.py`: the same seed replays the same day; the first step matches the risk-neutral draw rebuilt from that seed; settled cash equals unspent bankroll plus units times intrinsic value; the next morning opens at the previous close.
 
 The agent skill in `.agents/skills/check-the-numbers/` tells coding agents how to add checks like these.
 
@@ -50,7 +59,7 @@ New to Streamlit? [`docs/streamlit.md`](docs/streamlit.md) explains how an app w
 reruns from top to bottom on every click), with caching, layout and deployment.
 
 ## Limitations
-[What the app cannot tell you. Which inputs are scenarios rather than observed prices?]
+The path is a scenario, not an observed price. Volatility is constant, so there is no smile and no jump. The player is long and unhedged, with no bid-ask and with fractional units. A half-hour is one thirteenth of a trading day, not 30 calendar minutes. The score is one seeded week of a fair game, not evidence of an edge.
 
 ## AI use
 [Short summary. Details in `AI_LOG.md`.]

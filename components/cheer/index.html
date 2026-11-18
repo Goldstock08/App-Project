@@ -1,0 +1,397 @@
+<!DOCTYPE html>
+<html>
+  <body>
+    <script>
+      var Streamlit = {
+        setComponentReady: function () {
+          window.parent.postMessage(
+            { isStreamlitMessage: true, type: "streamlit:componentReady", apiVersion: 1 },
+            "*"
+          );
+        },
+        setFrameHeight: function (height) {
+          window.parent.postMessage(
+            { isStreamlitMessage: true, type: "streamlit:setFrameHeight", height: height },
+            "*"
+          );
+        },
+      };
+
+      var store = window.parent.sessionStorage;
+      var lastToken = store.getItem("cheerToken") || "";
+      var run = 0;
+      var audio = null;
+      var FRAMES = 240;
+
+      function context() {
+        if (!audio) {
+          var AC = window.AudioContext || window.webkitAudioContext;
+          if (!AC) return null;
+          audio = new AC();
+        }
+        if (audio.state === "suspended") audio.resume();
+        return audio;
+      }
+
+      window.parent.addEventListener("pointerdown", function () {
+        context();
+      });
+
+      function tone(ctx, freq, start, dur, type, gain) {
+        var osc = ctx.createOscillator();
+        var amp = ctx.createGain();
+        osc.type = type;
+        osc.frequency.setValueAtTime(freq, start);
+        amp.gain.setValueAtTime(0.0001, start);
+        amp.gain.exponentialRampToValueAtTime(gain, start + 0.015);
+        amp.gain.exponentialRampToValueAtTime(0.0001, start + dur);
+        osc.connect(amp);
+        amp.connect(ctx.destination);
+        osc.start(start);
+        osc.stop(start + dur + 0.05);
+      }
+
+      function noise(ctx, start, dur, gain, freq) {
+        var length = Math.max(1, Math.floor(ctx.sampleRate * dur));
+        var buffer = ctx.createBuffer(1, length, ctx.sampleRate);
+        var data = buffer.getChannelData(0);
+        for (var i = 0; i < length; i++) data[i] = Math.random() * 2 - 1;
+        var src = ctx.createBufferSource();
+        src.buffer = buffer;
+        var filter = ctx.createBiquadFilter();
+        filter.type = "bandpass";
+        filter.frequency.value = freq;
+        var amp = ctx.createGain();
+        amp.gain.setValueAtTime(gain, start);
+        amp.gain.exponentialRampToValueAtTime(0.0001, start + dur);
+        src.connect(filter);
+        filter.connect(amp);
+        amp.connect(ctx.destination);
+        src.start(start);
+      }
+
+      function play(kind) {
+        var ctx = context();
+        if (!ctx || ctx.state !== "running") return;
+        var t = ctx.currentTime;
+        if (kind === "rocket" || kind === "confetti") {
+          var notes = [523, 659, 784, 1046, 1318, 1568];
+          notes.forEach(function (freq, i) {
+            tone(ctx, freq, t + i * 0.07, 0.34, "triangle", 0.11);
+            tone(ctx, freq * 2, t + 0.45 + i * 0.05, 0.16, "square", 0.035);
+          });
+          noise(ctx, t + 0.15, 1.1, 0.07, 1800);
+          tone(ctx, 523, t + 0.9, 0.55, "sawtooth", 0.04);
+        } else if (kind === "explosion") {
+          noise(ctx, t, 0.7, 0.28, 110);
+          noise(ctx, t + 0.18, 0.45, 0.16, 400);
+          tone(ctx, 70, t, 0.7, "sine", 0.2);
+          tone(ctx, 140, t + 0.08, 0.3, "square", 0.05);
+        } else if (kind === "sink") {
+          [392, 349, 294, 220].forEach(function (freq, i) {
+            tone(ctx, freq, t + i * 0.16, 0.28, "sawtooth", 0.07);
+          });
+          noise(ctx, t + 0.55, 0.45, 0.1, 240);
+        } else if (kind === "push") {
+          tone(ctx, 392, t, 0.14, "square", 0.06);
+          tone(ctx, 349, t + 0.16, 0.22, "square", 0.06);
+        }
+      }
+
+      function banner(doc, headline, line, kind) {
+        var old = doc.getElementById("cheer-banner");
+        if (old) old.remove();
+        var win = kind === "confetti" || kind === "rocket";
+        var el = doc.createElement("div");
+        el.id = "cheer-banner";
+        el.style.cssText = [
+          "position:fixed",
+          "top:46%",
+          "left:50%",
+          "transform:translate(-50%,-50%)",
+          "z-index:100000",
+          "pointer-events:none",
+          "text-align:center",
+          "padding:1.1rem 2.2rem 1rem",
+          "border-radius:22px",
+          "background:rgba(12,18,32,0.88)",
+          "border:4px solid " + (win ? "#e2b15a" : "#f09a8a"),
+          "box-shadow:0 0 40px " + (win ? "rgba(226,177,90,0.55)" : "rgba(240,154,138,0.45)"),
+          "animation:cheer-slam 0.55s cubic-bezier(.2,1.4,.4,1) both",
+        ].join(";");
+        var head = doc.createElement("div");
+        head.textContent = headline;
+        var size = headline.length > 9
+          ? "clamp(34px, 5.4vw, 72px)"
+          : "clamp(72px, 13vw, 168px)";
+        head.style.cssText = [
+          "font:900 " + size + "/0.9 Impact, Haettenschweiler, sans-serif",
+          "letter-spacing:0.04em",
+          "color:" + (win ? "#f0d089" : "#f3b4b4"),
+          "text-shadow:0 6px 0 #1a1206, 0 0 28px " + (win ? "#e2b15a" : "#e45756"),
+        ].join(";");
+        var sub = doc.createElement("div");
+        sub.textContent = line;
+        sub.style.cssText = "margin-top:0.45rem;font:600 1.35rem/1.3 sans-serif;color:#f4efe6";
+        el.appendChild(head);
+        el.appendChild(sub);
+        if (!doc.getElementById("cheer-style")) {
+          var style = doc.createElement("style");
+          style.id = "cheer-style";
+          style.textContent = "@keyframes cheer-slam{0%{transform:translate(-50%,-50%) scale(0.82) rotate(-4deg)}55%{transform:translate(-50%,-50%) scale(1.12) rotate(1deg)}100%{transform:translate(-50%,-50%) scale(1) rotate(0)}}";
+          doc.head.appendChild(style);
+        }
+        doc.body.appendChild(el);
+        setTimeout(function () {
+          el.remove();
+        }, 4200);
+      }
+
+      function canvas(doc) {
+        var old = doc.getElementById("cheer-layer");
+        if (old) old.remove();
+        var c = doc.createElement("canvas");
+        c.id = "cheer-layer";
+        c.width = window.parent.innerWidth;
+        c.height = window.parent.innerHeight;
+        c.style.cssText = "position:fixed;inset:0;width:100vw;height:100vh;pointer-events:none;z-index:99999";
+        doc.body.appendChild(c);
+        return c.getContext("2d");
+      }
+
+      function bulb(ctx, x, y, hot, color) {
+        ctx.beginPath();
+        ctx.fillStyle = hot ? color : "rgba(255,255,255,0.12)";
+        ctx.arc(x, y, hot ? 9 : 6, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      function lights(ctx, w, h, frame, color) {
+        var phase = Math.floor(frame / 5);
+        var step = 42;
+        var x;
+        var y;
+        for (x = 24; x < w - 10; x += step) {
+          bulb(ctx, x, 22, (Math.floor(x / step) + phase) % 2 === 0, color);
+          bulb(ctx, x, h - 22, (Math.floor(x / step) + phase + 1) % 2 === 0, color);
+        }
+        for (y = 24; y < h - 10; y += step) {
+          bulb(ctx, 22, y, (Math.floor(y / step) + phase) % 2 === 0, color);
+          bulb(ctx, w - 22, y, (Math.floor(y / step) + phase + 1) % 2 === 0, color);
+        }
+      }
+
+      function burst(kind) {
+        var doc = window.parent.document;
+        var ctx = canvas(doc);
+        var w = ctx.canvas.width;
+        var h = ctx.canvas.height;
+        var bits = [];
+        var colors = ["#e2b15a", "#9ee6c2", "#f3b4b4", "#8ec8ff", "#f4efe6", "#f08a3a"];
+        var i;
+        var ang;
+        var speed;
+        if (kind === "confetti" || kind === "rocket") {
+          for (i = 0; i < 260; i++) {
+            var fromLeft = i % 2 === 0;
+            bits.push({
+              x: fromLeft ? -20 : w + 20,
+              y: h * (0.35 + Math.random() * 0.4),
+              vx: (fromLeft ? 1 : -1) * (6 + Math.random() * 9),
+              vy: -7 - Math.random() * 6,
+              r: 8 + Math.random() * 16,
+              color: colors[i % colors.length],
+              spin: 0.1 + Math.random() * 0.25,
+            });
+          }
+          for (i = 0; i < 10; i++) {
+            ang = -2.4 + (i / 9) * 1.6;
+            speed = 7 + Math.random() * 6;
+            bits.push({
+              coin: true,
+              x: w * 0.5,
+              y: h * 0.48,
+              vx: Math.cos(ang) * speed,
+              vy: Math.sin(ang) * speed - 4,
+              s: 1.1 + Math.random() * 0.7,
+            });
+          }
+        }
+        if (kind === "rocket") {
+          for (i = 0; i < 8; i++) {
+            bits.push({
+              rocket: true,
+              x: w * (0.08 + i * 0.12),
+              y: h + 80 + i * 30,
+              vy: -9 - Math.random() * 4,
+            });
+          }
+        }
+        if (kind === "explosion") {
+          for (i = 0; i < 180; i++) {
+            ang = Math.random() * Math.PI * 2;
+            speed = 3 + Math.random() * 14;
+            bits.push({
+              boom: true,
+              x: w * 0.5,
+              y: h * 0.46,
+              vx: Math.cos(ang) * speed,
+              vy: Math.sin(ang) * speed,
+              r: 8 + Math.random() * 22,
+              color: colors[i % 3],
+            });
+          }
+        }
+        var frame = 0;
+        var mine = run;
+        var win = kind === "confetti" || kind === "rocket";
+        function draw() {
+          if (mine !== run) return;
+          ctx.clearRect(0, 0, w, h);
+          if (frame < 10) {
+            ctx.fillStyle = win ? "rgba(226,177,90,0.18)" : "rgba(228,87,86,0.22)";
+            ctx.fillRect(0, 0, w, h);
+          }
+          lights(ctx, w, h, frame, win ? "#f0d089" : "#f09a8a");
+          bits.forEach(function (bit) {
+            if (bit.rocket) {
+              bit.y += bit.vy;
+              ctx.fillStyle = "#f4efe6";
+              ctx.fillRect(bit.x - 10, bit.y, 20, 64);
+              ctx.fillStyle = "#e2b15a";
+              ctx.beginPath();
+              ctx.moveTo(bit.x, bit.y - 36);
+              ctx.lineTo(bit.x + 16, bit.y);
+              ctx.lineTo(bit.x - 16, bit.y);
+              ctx.fill();
+              ctx.fillStyle = "#f08a3a";
+              ctx.beginPath();
+              ctx.moveTo(bit.x - 10, bit.y + 64);
+              ctx.lineTo(bit.x + 10, bit.y + 64);
+              ctx.lineTo(bit.x, bit.y + 96);
+              ctx.fill();
+            } else if (bit.coin) {
+              bit.x += bit.vx;
+              bit.y += bit.vy;
+              bit.vy += 0.18;
+              ctx.save();
+              ctx.translate(bit.x, bit.y);
+              ctx.rotate(frame * 0.08);
+              ctx.scale(bit.s, bit.s);
+              ctx.fillStyle = "#e2b15a";
+              ctx.beginPath();
+              ctx.arc(0, 0, 16, 0, Math.PI * 2);
+              ctx.fill();
+              ctx.strokeStyle = "#f4efe6";
+              ctx.lineWidth = 2;
+              ctx.stroke();
+              ctx.fillStyle = "#1a1206";
+              ctx.font = "bold 16px sans-serif";
+              ctx.textAlign = "center";
+              ctx.textBaseline = "middle";
+              ctx.fillText("$", 0, 1);
+              ctx.restore();
+            } else if (bit.boom) {
+              bit.x += bit.vx;
+              bit.y += bit.vy;
+              bit.vy += 0.12;
+              ctx.globalAlpha = Math.max(0, 1 - frame / 90);
+              ctx.fillStyle = bit.color;
+              ctx.beginPath();
+              ctx.arc(bit.x, bit.y, bit.r, 0, Math.PI * 2);
+              ctx.fill();
+              ctx.globalAlpha = 1;
+            } else {
+              bit.x += bit.vx;
+              bit.y += bit.vy;
+              bit.vy += 0.12;
+              ctx.save();
+              ctx.translate(bit.x, bit.y);
+              ctx.rotate(frame * bit.spin);
+              ctx.fillStyle = bit.color;
+              ctx.fillRect(-bit.r, -bit.r * 0.45, bit.r * 2, bit.r);
+              ctx.restore();
+            }
+          });
+          frame += 1;
+          if (frame < FRAMES) requestAnimationFrame(draw);
+          else ctx.canvas.remove();
+        }
+        if (bits.length || kind === "push") requestAnimationFrame(draw);
+        else ctx.canvas.remove();
+      }
+
+      function boomGif(doc) {
+        var old = doc.getElementById("cheer-boom");
+        if (old) old.remove();
+        var img = doc.createElement("img");
+        img.id = "cheer-boom";
+        img.alt = "";
+        img.src = new URL("explosion.gif", window.location.href).href;
+        img.style.cssText = [
+          "position:fixed",
+          "left:50%",
+          "top:44%",
+          "transform:translate(-50%,-50%)",
+          "width:min(1380px,192vw)",
+          "height:auto",
+          "image-rendering:pixelated",
+          "z-index:99999",
+          "pointer-events:none",
+        ].join(";");
+        doc.body.appendChild(img);
+        setTimeout(function () { img.remove(); }, 2200);
+      }
+
+      function clearCheer(doc) {
+        run += 1;
+        ["cheer-banner", "cheer-boom", "cheer-layer"].forEach(function (id) {
+          var el = doc.getElementById(id);
+          if (el) el.remove();
+        });
+      }
+
+      function show(args) {
+        var doc = window.parent.document;
+        if (!args || !args.token) {
+          clearCheer(doc);
+          return;
+        }
+        if (args.token === lastToken) return;
+        lastToken = args.token;
+        store.setItem("cheerToken", lastToken);
+        clearCheer(doc);
+        doc.documentElement.dataset.cheer = args.kind || "";
+        if (args.headline) banner(doc, args.headline, args.line || "", args.kind);
+        if (args.kind === "sink") boomGif(doc);
+        if (args.kind) burst(args.kind);
+        play(args.kind);
+        speak(args.voice);
+      }
+
+      function speak(name) {
+        if (!name) return;
+        var ctx = context();
+        if (!ctx) return;
+        fetch(name)
+          .then(function (response) { return response.arrayBuffer(); })
+          .then(function (bytes) { return ctx.decodeAudioData(bytes); })
+          .then(function (buffer) {
+            var src = ctx.createBufferSource();
+            src.buffer = buffer;
+            src.connect(ctx.destination);
+            src.start();
+          })
+          .catch(function () {});
+      }
+
+      window.addEventListener("message", function (event) {
+        if (!event.data || event.data.type !== "streamlit:render") return;
+        show(event.data.args || {});
+      });
+
+      Streamlit.setComponentReady();
+      Streamlit.setFrameHeight(0);
+    </script>
+  </body>
+</html>
